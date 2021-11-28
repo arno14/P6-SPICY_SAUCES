@@ -6,9 +6,7 @@ exports.createSauce = (req, res, next) => {
   delete sauceObject._id;
   const sauce = new Sauce({
     ...sauceObject,
-    imageUrl: `${req.protocol}://${req.get("host")}/images/${
-      req.file.filename
-    }`,
+    imageUrl: `/images/${req.file.filename}`, //sans doute préférable d'enregistrer un chemin relatif de l'image, car si on change de nom de domaine, il faut renommer toutes les images dans la Base de données
   });
   sauce
     .save()
@@ -34,9 +32,7 @@ exports.modifySauce = (req, res, next) => {
   const sauceObject = req.file
     ? {
         ...JSON.parse(req.body.sauce),
-        imageUrl: `${req.protocol}://${req.get("host")}/images/${
-          req.file.filename
-        }`,
+        imageUrl: `/images/${ req.file.filename}`,
       }
     : { ...req.body };
   Sauce.updateOne(
