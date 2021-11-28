@@ -31,9 +31,9 @@ exports.getOneSauce = (req, res, next) => {
 exports.modifySauce = (req, res, next) => {
   const sauceObject = req.file
     ? {
-        ...JSON.parse(req.body.sauce),
-        imageUrl: `/images/${ req.file.filename}`,
-      }
+      ...JSON.parse(req.body.sauce),
+      imageUrl: `/images/${req.file.filename}`,
+    }
     : { ...req.body };
   Sauce.updateOne(
     { _id: req.params.id },
@@ -69,55 +69,86 @@ exports.getAllSauce = (req, res, next) => {
 };
 
 exports.likeSauce = (req, res, next) => {
-  const like = req.body.like;
+  const like = req.body.like; //prend les valeurs -1, 0 ou 1
   const idSauce = req.params.id;
+  const userId = req.body.userId;
 
   Sauce.findOne({ _id: idSauce }).then((sauce) => {
-    const idIncluded =
-      !sauce.usersLiked.includes(req.body.userId) &&
-      !sauce.usersDisliked.includes(req.body.userId);
-    if (like === 1 && idIncluded) {
-      Sauce.updateOne(
-        { _id: idSauce },
-        {
-          $push: { usersLiked: req.body.userId },
-          $inc: { likes: +1 },
-        }
-      )
-        .then(() => res.status(200).json({ message: "like ajouté !" }))
-        .catch((error) => res.status(400).json({ error }));
-    } else if (like === -1 && idIncluded) {
-      Sauce.updateOne(
-        { _id: idSauce },
-        {
-          $push: { usersDisliked: req.body.userId },
+
+    // tentatives de refactoring
+    // c'est pas encore vraiment fonctionnel
+
+    const userHasAlreadyLiked=sauce.usersLiked.includes(userId);
+    const userHasAlreadyDisliked=sauce.usersDisliked.includes(userId);
+
+    //on affiche toutes les infos utiles pour débuguer dans le console du server
+    console.log({ sauce , userId, userHasAlreadyLiked, userHasAlreadyDisliked });
+
+    if(userHasAlreadyLiked && like===1){
+      res.status(200).json({"message": "Already liked!"});
+      return;//important, on arrete le traitement ici, le code ci-dessous ne sera pas exécuté
+    }
+
+    if(userHasAlreadyDisliked && like===1){
+      res.status(200).json({"message": "Already liked!"});
+      return;
+    }
+
+    let updateDatas = null;//contiendra les données à envoyer à Mongo DB
+    let message = "An error occured";
+
+    //dislike 
+    if(like===-1){
+      updateDatas={
+          $pull:{usersLiked: userId},//je pense que l'on peut toujours mettre l'instruction de supprimer le like, même si le user Id n'étais pas présent dans la liste
+          $push:{usersDisliked: userId},
           $inc: { dislikes: +1 },
         }
-      )
-        .then(() => res.status(200).json({ message: "dislike ajoutée !" }))
-        .catch((error) => res.status(400).json({ error }));
-    } else {
-      if (sauce.usersLiked.includes(req.body.userId)) {
-        Sauce.updateOne(
-          { _id: idSauce },
-          {
-            $pull: { usersLiked: req.body.userId },
-            $inc: { likes: -1 },
-          }
-        )
-          .then(() => res.status(200).json({ message: "like retiré !" }))
-          .catch((error) => res.status(400).json({ error }));
-      } else if (sauce.usersDisliked.includes(req.body.userId)) {
-        Sauce.updateOne(
-          { _id: idSauce },
-          {
-            $pull: { usersDisliked: req.body.userId },
-            $inc: { dislikes: -1 },
-          }
-        )
-          .then(() => res.status(200).json({ message: "dislike retiré !" }))
-          .catch((error) => res.status(400).json({ error }));
-      }
+        message = "dislike ajoutée !";
+        if(userHasAlreadyLiked){
+          updateDatas['$inc']['likes']=-1;
+          message+=" like supprimés"; //ça peut aider d'avoir des messages différenciés, pour mieux voir ce qu'il se passe
+        }
+        
+    //neutral
+    }else if(like===0){
+        updateDatas={
+          $pull:{usersLiked: userId},
+          $pull:{usersDisliked: userId},
+          $inc: {},
+        }
+        message="Neutral";
+        if(userHasAlreadyDisliked){
+          updateDatas['$inc']['dislikes']=-1;
+          message+" dislike supprimé!";
+        }
+        if(userHasAlreadyLiked){
+          updateDatas['$inc']['likes']=-1;
+          message+" like supprimé!";
+        }
+
+    //like 
+    }else if(like===1){
+        updateDatas={
+          $push:{usersLiked: userId},
+          $pull:{usersDisliked: userId},
+          $inc: { likes: +1 },
+        }
+        message = "like ajoutée !";
+        if(userHasAlreadyDisliked){
+          updateDatas['$inc']['dislikes']=-1;
+          message+=" dislike supprimés!"
+        }
+
+    }else{
+      res.status(400).json({message:`valeur ${like} invalide!!!`});
+      return;
     }
+
+    console.log({updateDatas, message});
+
+    Sauce.updateOne({ _id: idSauce }, updateDatas)
+      .then(() => res.status(200).json({ message }))
+      .catch((error) => res.status(400).json({ error }));
   });
 };
